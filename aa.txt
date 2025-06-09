@@ -1,0 +1,136 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+
+local localPlayer = Players.LocalPlayer
+local espEnabled = true
+
+-- Einstellungen
+local settings = {
+	ToggleKey = Enum.KeyCode.RightAlt,
+	RefreshRate = 0.1,
+	MaxDistance = 500,
+	BoxColor = Color3.fromRGB(255, 255, 255),
+	TracerColor = Color3.fromRGB(255, 255, 255),
+	OutlineColor = Color3.fromRGB(0, 0, 0),
+	BoxThickness = 1,
+	TracerThickness = 1
+}
+
+local espObjects = {}
+
+-- Toggle Sichtbarkeit
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if not gpe and input.KeyCode == settings.ToggleKey then
+		espEnabled = not espEnabled
+		for _, v in pairs(espObjects) do
+			if v.Box then v.Box.Visible = espEnabled end
+			if v.Tracer then v.Tracer.Visible = espEnabled end
+			if v.Outline then v.Outline.Visible = espEnabled end
+			if v.TracerOutline then v.TracerOutline.Visible = espEnabled end
+		end
+	end
+end)
+
+-- Erstellt ESP-Objekte für einen Spieler
+local function createESP(player)
+	local box = Drawing.new("Quad")
+	local boxOutline = Drawing.new("Quad")
+	local tracer = Drawing.new("Line")
+	local tracerOutline = Drawing.new("Line")
+
+	box.Color = settings.BoxColor
+	box.Thickness = settings.BoxThickness
+	box.Filled = false
+	box.ZIndex = 2
+
+	boxOutline.Color = settings.OutlineColor
+	boxOutline.Thickness = settings.BoxThickness + 2
+	boxOutline.Filled = false
+	boxOutline.ZIndex = 1
+
+	tracer.Color = settings.TracerColor
+	tracer.Thickness = settings.TracerThickness
+	tracer.ZIndex = 2
+
+	tracerOutline.Color = settings.OutlineColor
+	tracerOutline.Thickness = settings.TracerThickness + 2
+	tracerOutline.ZIndex = 1
+
+	espObjects[player] = {
+		Box = box,
+		Outline = boxOutline,
+		Tracer = tracer,
+		TracerOutline = tracerOutline
+	}
+end
+
+-- Entfernt ESP, wenn Spieler geht
+Players.PlayerRemoving:Connect(function(player)
+	local obj = espObjects[player]
+	if obj then
+		for _, d in pairs(obj) do
+			d:Remove()
+		end
+		espObjects[player] = nil
+	end
+end)
+
+-- Update-Schleife
+RunService.RenderStepped:Connect(function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+			if not espObjects[player] then
+				createESP(player)
+			end
+
+			local esp = espObjects[player]
+			local hrp = player.Character.HumanoidRootPart
+			local cf = hrp.CFrame
+			local size = hrp.Size * 1.5
+			local pos, onScreen = Camera:WorldToViewportPoint(cf.Position)
+			if onScreen and (cf.Position - Camera.CFrame.Position).Magnitude <= settings.MaxDistance and espEnabled then
+				local tl = Camera:WorldToViewportPoint(cf.Position + Vector3.new(-size.X, size.Y, 0))
+				local tr = Camera:WorldToViewportPoint(cf.Position + Vector3.new(size.X, size.Y, 0))
+				local bl = Camera:WorldToViewportPoint(cf.Position + Vector3.new(-size.X, -size.Y, 0))
+				local br = Camera:WorldToViewportPoint(cf.Position + Vector3.new(size.X, -size.Y, 0))
+
+				esp.Box.Visible = true
+				esp.Box.PointA = tr
+				esp.Box.PointB = tl
+				esp.Box.PointC = bl
+				esp.Box.PointD = br
+
+				esp.Outline.Visible = true
+				esp.Outline.PointA = tr
+				esp.Outline.PointB = tl
+				esp.Outline.PointC = bl
+				esp.Outline.PointD = br
+
+				local origin = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+				local center = Vector2.new(pos.X, pos.Y)
+
+				esp.Tracer.Visible = true
+				esp.Tracer.From = origin
+				esp.Tracer.To = center
+
+				esp.TracerOutline.Visible = true
+				esp.TracerOutline.From = origin
+				esp.TracerOutline.To = center
+			else
+				esp.Box.Visible = false
+				esp.Outline.Visible = false
+				esp.Tracer.Visible = false
+				esp.TracerOutline.Visible = false
+			end
+		end
+	end
+end)
+
+-- Initiale Spieler setzen
+for _,player in ipairs(Players:GetPlayers()) do
+	if player ~= localPlayer then
+		createESP(player)
+	end
+end
